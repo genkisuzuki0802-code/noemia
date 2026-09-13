@@ -58,10 +58,10 @@ export default function Home() {
   const [executionResult, setExecutionResult] = useState("");
   const [executionModel, setExecutionModel] = useState("");
 
-const [revisionInstruction, setRevisionInstruction] = useState("");
-const [revising, setRevising] = useState(false);
+  const [revisionInstruction, setRevisionInstruction] = useState("");
+  const [revising, setRevising] = useState(false);
 
-const [executionHistory, setExecutionHistory] = useState<string[]>([]);
+  const [executionHistory, setExecutionHistory] = useState<string[]>([]);
 
   const [showDetails, setShowDetails] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -101,7 +101,6 @@ const [executionHistory, setExecutionHistory] = useState<string[]>([]);
       setExecutionError("");
 
       return data as EngineResponse;
-
     } catch (e) {
       setError(
         e instanceof Error
@@ -110,7 +109,6 @@ const [executionHistory, setExecutionHistory] = useState<string[]>([]);
       );
 
       return null;
-
     } finally {
       setLoading(false);
     }
@@ -152,68 +150,66 @@ const [executionHistory, setExecutionHistory] = useState<string[]>([]);
     await runEngine(newTurns);
   }
 
-async function executePrompt() {
-  if (!result?.final_prompt) return;
+  async function executePrompt() {
+    if (!result?.final_prompt) return;
 
-  setExecuting(true);
-  setExecutionError("");
-  setExecutionResult("");
-  setExecutionModel("");
+    setExecuting(true);
+    setExecutionError("");
+    setExecutionResult("");
+    setExecutionModel("");
 
-  try {
-    const response = await fetch("/api/execute", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        prompt: result.final_prompt,
-      }),
-    });
+    try {
+      const response = await fetch("/api/execute", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: result.final_prompt,
+        }),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      throw new Error(
-        data?.error || "AI実行に失敗しました"
+      if (!response.ok) {
+        throw new Error(
+          data?.error || "AI実行に失敗しました"
+        );
+      }
+
+      if (executionResult.trim()) {
+        setExecutionHistory((prev) => [
+          ...prev,
+          executionResult,
+        ]);
+      }
+
+      setExecutionResult(data.result || "");
+      setExecutionModel(data.model || "");
+    } catch (e) {
+      setExecutionError(
+        e instanceof Error
+          ? e.message
+          : "AI実行に失敗しました"
       );
+    } finally {
+      setExecuting(false);
+    }
+  }
+
+  async function reviseExecution() {
+    if (
+      !executionResult.trim() ||
+      !revisionInstruction.trim()
+    ) {
+      return;
     }
 
-if (executionResult.trim()) {
-  setExecutionHistory((prev) => [
-    ...prev,
-    executionResult,
-  ]);
-}
+    setRevising(true);
+    setExecutionError("");
 
-setExecutionResult(data.result || "");
-setExecutionModel(data.model || "");
-
-  } catch (e) {
-    setExecutionError(
-      e instanceof Error
-        ? e.message
-        : "AI実行に失敗しました"
-    );
-
-  } finally {
-    setExecuting(false);
-  }
-}
-
-async function reviseExecution() {
-  if (
-    !executionResult.trim() ||
-    !revisionInstruction.trim()
-  ) {
-    return;
-  }
-
-  setRevising(true);
-  setExecutionError("");
-
-  try {
-    const revisionPrompt = `
+    try {
+      const revisionPrompt = `
 以下は現在のAI実行結果です。
 
 --- 現在の結果 ---
@@ -235,63 +231,62 @@ ${revisionInstruction}
 - 完成版のみを出力してください。
 `;
 
-    const response = await fetch("/api/execute", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        prompt: revisionPrompt,
-      }),
-    });
+      const response = await fetch("/api/execute", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: revisionPrompt,
+        }),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      throw new Error(
-        data?.error || "修正に失敗しました"
+      if (!response.ok) {
+        throw new Error(
+          data?.error || "修正に失敗しました"
+        );
+      }
+
+      if (executionResult.trim()) {
+        setExecutionHistory((prev) => [
+          ...prev,
+          executionResult,
+        ]);
+      }
+
+      setExecutionResult(data.result || "");
+      setExecutionModel(data.model || "");
+      setRevisionInstruction("");
+    } catch (e) {
+      setExecutionError(
+        e instanceof Error
+          ? e.message
+          : "修正に失敗しました"
       );
+    } finally {
+      setRevising(false);
+    }
+  }
+
+  function undoExecution() {
+    if (executionHistory.length === 0) {
+      return;
     }
 
-if (executionResult.trim()) {
-  setExecutionHistory((prev) => [
-    ...prev,
-    executionResult,
-  ]);
-}
+    const previousResult =
+      executionHistory[executionHistory.length - 1];
 
-setExecutionResult(data.result || "");
-setExecutionModel(data.model || "");
-setRevisionInstruction("");
+    setExecutionResult(previousResult);
 
-  } catch (e) {
-    setExecutionError(
-      e instanceof Error
-        ? e.message
-        : "修正に失敗しました"
+    setExecutionHistory((prev) =>
+      prev.slice(0, -1)
     );
 
-  } finally {
-    setRevising(false);
-  }
-}
-
-function undoExecution() {
-  if (executionHistory.length === 0) {
-    return;
+    setRevisionInstruction("");
   }
 
-  const previousResult =
-    executionHistory[executionHistory.length - 1];
-
-  setExecutionResult(previousResult);
-
-  setExecutionHistory((prev) =>
-    prev.slice(0, -1)
-  );
-
-  setRevisionInstruction("");
-}
   function reset() {
     setInitialInput("");
     setAnswer("");
@@ -304,6 +299,9 @@ function undoExecution() {
     setExecutionResult("");
     setExecutionModel("");
     setExecutionHistory([]);
+
+    setRevisionInstruction("");
+    setRevising(false);
 
     setShowDetails(false);
     setShowPrompt(false);
@@ -349,60 +347,59 @@ function undoExecution() {
   return (
     <main>
       <div className="shell">
+        <header className="brand">
+          <div className="brand-name">
+            Noemia
+          </div>
 
-<header className="brand">
-  <div className="brand-name">
-    Noemia
-  </div>
+          <p className="brand-copy">
+            うまく言葉にできなくていい。
+          </p>
+        </header>
 
-  <p className="brand-copy">
-    うまく言葉にできなくていい。
-  </p>
-</header>
+        {!result && (
+          <section className="card hero">
+            <h2>何をしたいですか？</h2>
 
-{!result && (
-  <section className="card hero">
-    <h2>何をしたいですか？</h2>
+            <p>
+              まとまっていなくても大丈夫です。
+              必要なことだけAIが質問して、
+              あなたの意図を形にします。
+            </p>
 
-<p>
-  まとまっていなくても大丈夫です。
-  必要なことだけAIが質問して、
-  あなたの意図を形にします。
-</p>
+            <div className="intent-input-wrap">
+              <textarea
+                className="intent-input"
+                value={initialInput}
+                onChange={(e) =>
+                  setInitialInput(e.target.value)
+                }
+                placeholder="例：来週お客さんにプレゼンするんだけど、最近の市場について説得力ある感じで説明したい。"
+              />
 
-    <div className="intent-input-wrap">
-      <textarea
-        className="intent-input"
-        value={initialInput}
-        onChange={(e) =>
-          setInitialInput(e.target.value)
-        }
-        placeholder="例：来週お客さんにプレゼンするんだけど、最近の市場について説得力ある感じで説明したい。"
-      />
+              <div className="input-hint">
+                短くても、まとまっていなくても大丈夫です
+              </div>
 
-      <div className="input-hint">
-        短くても、まとまっていなくても大丈夫です
-      </div>
+              <div className="intent-input-footer">
+                <div />
 
-      <div className="intent-input-footer">
-        <div />
-
-        <button
-          className="intent-submit"
-          onClick={start}
-          disabled={
-            loading ||
-            !initialInput.trim()
-          }
-        >
-          {loading
-            ? "理解しています..."
-            : "意図を整理する →"}
-        </button>
-      </div>
-    </div>
-  </section>
-)}
+                <button
+                  className="intent-submit"
+                  onClick={start}
+                  disabled={
+                    loading ||
+                    !initialInput.trim()
+                  }
+                >
+                  {loading
+                    ? "理解しています..."
+                    : "意図を整理する →"}
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
 
         {error && (
           <div className="error">
@@ -410,142 +407,142 @@ function undoExecution() {
           </div>
         )}
 
-{result && (
-  <>
-{result.status === "ask" && (
-<section
-  className="card"
-  style={{
-    padding: "20px 24px",
-  }}
->
-  <div
-    style={{
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 20,
-    }}
-  >
-    <span className="muted">
-      Intent理解度
-    </span>
+        {result && (
+          <>
+            {result.status === "ask" && (
+              <section
+                className="card"
+                style={{
+                  padding: "20px 24px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 20,
+                  }}
+                >
+                  <span className="muted">
+                    Intent理解度
+                  </span>
 
-    <strong
-      style={{
-        fontSize: 18,
-        lineHeight: 1,
-      }}
-    >
-      {result.understanding_score}%
-    </strong>
-  </div>
+                  <strong
+                    style={{
+                      fontSize: 18,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {result.understanding_score}%
+                  </strong>
+                </div>
 
-  <div
-    style={{
-      width: "100%",
-      height: 6,
-      marginTop: 12,
-      overflow: "hidden",
-      borderRadius: 999,
-      background: "#eeeeef",
-    }}
-  >
-    <div
-      style={{
-        width: `${result.understanding_score}%`,
-        height: "100%",
-        borderRadius: 999,
-        background: "#111",
-        transition: "width 0.35s ease",
-      }}
-    />
-  </div>
+                <div
+                  style={{
+                    width: "100%",
+                    height: 6,
+                    marginTop: 12,
+                    overflow: "hidden",
+                    borderRadius: 999,
+                    background: "#eeeeef",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${result.understanding_score}%`,
+                      height: "100%",
+                      borderRadius: 999,
+                      background: "#111",
+                      transition: "width 0.35s ease",
+                    }}
+                  />
+                </div>
 
-  <div
-    style={{
-      marginTop: 10,
-      color: "#777",
-      fontSize: 13,
-      lineHeight: 1.5,
-    }}
-  >
-    最終成果への影響が大きい点だけ確認します
-  </div>
-</section>
-)}
+                <div
+                  style={{
+                    marginTop: 10,
+                    color: "#777",
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  最終成果への影響が大きい点だけ確認します
+                </div>
+              </section>
+            )}
 
-{result.status === "ask" && (
-  <section className="card question-card">
-    <div className="muted">
-      次に確認したいこと
-    </div>
+            {result.status === "ask" && (
+              <section className="card question-card">
+                <div className="muted">
+                  次に確認したいこと
+                </div>
 
-    <div className="question">
-      {result.next_question}
-    </div>
+                <div className="question">
+                  {result.next_question}
+                </div>
 
-    <textarea
-      className="answer-input"
-      value={answer}
-      onChange={(e) =>
-        setAnswer(e.target.value)
-      }
-      placeholder="短くても大丈夫です。"
-    />
+                <textarea
+                  className="answer-input"
+                  value={answer}
+                  onChange={(e) =>
+                    setAnswer(e.target.value)
+                  }
+                  placeholder="短くても大丈夫です。"
+                />
 
-    <div className="answer-footer">
-      <span className="input-hint">
-        分かる範囲だけで大丈夫です
-      </span>
+                <div className="answer-footer">
+                  <span className="input-hint">
+                    分かる範囲だけで大丈夫です
+                  </span>
 
-      <button
-        className="answer-submit"
-        onClick={submitAnswer}
-        disabled={
-          loading ||
-          !answer.trim()
-        }
-      >
-        {loading
-          ? "再分析しています..."
-          : "回答する →"}
-      </button>
-    </div>
-  </section>
-)}
+                  <button
+                    className="answer-submit"
+                    onClick={submitAnswer}
+                    disabled={
+                      loading ||
+                      !answer.trim()
+                    }
+                  >
+                    {loading
+                      ? "再分析しています..."
+                      : "回答する →"}
+                  </button>
+                </div>
+              </section>
+            )}
+
             {result.status === "ready" && (
               <>
-               <section className="card intent-summary-card">
-  <div className="muted">
-    AIが理解したあなたの意図
-  </div>
+                <section className="card intent-summary-card">
+                  <div className="muted">
+                    AIが理解したあなたの意図
+                  </div>
 
-  <div className="intent-summary">
-    {result.intent_summary}
-  </div>
+                  <div className="intent-summary">
+                    {result.intent_summary}
+                  </div>
 
-  <div className="intent-summary-footer">
-    <span className="muted">
-      内容が合っているか確認してください
-    </span>
+                  <div className="intent-summary-footer">
+                    <span className="muted">
+                      内容が合っているか確認してください
+                    </span>
 
-    <button
-      className="secondary-button"
-      onClick={() =>
-        setShowDetails((v) => !v)
-      }
-    >
-      {showDetails
-        ? "詳細を閉じる"
-        : "詳細を見る"}
-    </button>
-  </div>
-</section>
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        setShowDetails((v) => !v)
+                      }
+                    >
+                      {showDetails
+                        ? "詳細を閉じる"
+                        : "詳細を見る"}
+                    </button>
+                  </div>
+                </section>
 
                 {showDetails && (
                   <section className="card">
-
                     {confirmedFacts.length > 0 && (
                       <>
                         <div className="muted">
@@ -596,9 +593,7 @@ function undoExecution() {
                                 </b>
 
                                 <span>
-                                  {
-                                    assumption.text
-                                  }
+                                  {assumption.text}
                                 </span>
                               </div>
                             )
@@ -642,152 +637,55 @@ function undoExecution() {
                         </div>
                       </>
                     )}
-
                   </section>
                 )}
 
-<section className="card">
-  <strong className="ready-title">
-    実行準備ができました
-  </strong>
+                <section className="card">
+                  <strong className="ready-title">
+                    実行準備ができました
+                  </strong>
 
-<p className="ready-copy">
-  Noemiaがあなたの意図を整理しました。
-  このままAIに実行できます。
-</p>
+                  <p className="ready-copy">
+                    Noemiaがあなたの意図を整理しました。
+                    このままAIに実行できます。
+                  </p>
 
-  <div className="ready-actions">
-    <button
-      className="secondary-button"
-      onClick={() =>
-        setShowPrompt((v) => !v)
-      }
-    >
-      {showPrompt
-        ? "プロンプトを閉じる"
-        : "完成プロンプトを見る"}
-    </button>
+                  <div className="ready-actions">
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        setShowPrompt((v) => !v)
+                      }
+                    >
+                      {showPrompt
+                        ? "プロンプトを閉じる"
+                        : "完成プロンプトを見る"}
+                    </button>
 
-    <button
-      className="primary-action"
-      onClick={executePrompt}
-      disabled={executing}
-    >
-      {executing
-        ? "AIが実行しています..."
-        : "AIで実行 →"}
-    </button>
-  </div>
-</section>
-
-                {executionError && (
-                  <div className="error">
-                    {executionError}
+                    <button
+                      className="primary-action"
+                      onClick={executePrompt}
+                      disabled={executing}
+                    >
+                      {executing
+                        ? "AIが実行しています..."
+                        : "AIで実行 →"}
+                    </button>
                   </div>
-                )}
-{executionResult && (
-  <section className="card result-card">
-    <div className="result-header">
-      <div>
-        <div className="muted">AIが作成した成果物</div>
-        <h2 className="result-title">AI実行結果</h2>
-
-      </div>
-
-      <div className="result-actions">
-        {executionHistory.length > 0 && (
-          <button
-            className="secondary-button"
-            onClick={undoExecution}
-          >
-            ← 1つ前に戻す
-          </button>
-        )}
-
-        <button
-          className="secondary-button"
-          onClick={executePrompt}
-          disabled={executing}
-        >
-          {executing
-            ? "再生成中..."
-            : "もう一度生成"}
-        </button>
-
-        <button
-          className="secondary-button"
-          onClick={copyExecutionResult}
-        >
-          コピー
-        </button>
-      </div>
-    </div>
-
-    <div className="result-body">
-      <div className="markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {executionResult}
-        </ReactMarkdown>
-      </div>
-    </div>
-
-    <div className="revision-panel">
-      <div>
-        <div className="muted">追加指示で修正</div>
-        <p className="revision-help">
-          今の成果物をベースに、変えたいところだけ自然な言葉で入力してください。
-        </p>
-      </div>
-
-      <textarea
-        className="revision-textarea"
-        value={revisionInstruction}
-        onChange={(e) =>
-          setRevisionInstruction(e.target.value)
-        }
-        placeholder="例：コストより安全性を強調して。3枚に短くして。経営層向けの表現にして。"
-      />
-
-      <div className="revision-footer">
-        <span className="muted">
-          元の目的は維持したまま修正します
-        </span>
-
-<button
-  className="revision-button"
-  onClick={reviseExecution}
-  disabled={
-    revising ||
-    !revisionInstruction.trim()
-  }
->
-  {revising
-    ? "修正しています..."
-    : "修正する →"}
-</button>
-      </div>
-    </div>
-  </section>
-)}
-
+                </section>
 
                 {showPrompt && (
                   <section className="card">
-
                     <div className="row">
-
                       <strong>
                         完成プロンプト
                       </strong>
 
-                      <button
-                        onClick={copyPrompt}
-                      >
+                      <button onClick={copyPrompt}>
                         {copied
                           ? "コピーしました"
                           : "コピー"}
                       </button>
-
                     </div>
 
                     <div
@@ -799,7 +697,109 @@ function undoExecution() {
                     <div className="prompt">
                       {result.final_prompt}
                     </div>
+                  </section>
+                )}
 
+                {executionError && (
+                  <div className="error">
+                    {executionError}
+                  </div>
+                )}
+
+                {executionResult && (
+                  <section className="card result-card">
+                    <div className="result-header">
+                      <div>
+                        <div className="muted">
+                          AIが作成した成果物
+                        </div>
+
+                        <h2 className="result-title">
+                          AI実行結果
+                        </h2>
+                      </div>
+
+                      <div className="result-actions">
+                        {executionHistory.length > 0 && (
+                          <button
+                            className="secondary-button"
+                            onClick={undoExecution}
+                          >
+                            ← 1つ前に戻す
+                          </button>
+                        )}
+
+                        <button
+                          className="secondary-button"
+                          onClick={executePrompt}
+                          disabled={executing}
+                        >
+                          {executing
+                            ? "再生成中..."
+                            : "もう一度生成"}
+                        </button>
+
+                        <button
+                          className="secondary-button"
+                          onClick={copyExecutionResult}
+                        >
+                          コピー
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="result-body">
+                      <div className="markdown">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                        >
+                          {executionResult}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+
+                    <div className="revision-panel">
+                      <div>
+                        <div className="muted">
+                          追加指示で修正
+                        </div>
+
+                        <p className="revision-help">
+                          今の成果物をベースに、
+                          変えたいところだけ自然な言葉で入力してください。
+                        </p>
+                      </div>
+
+                      <textarea
+                        className="revision-textarea"
+                        value={revisionInstruction}
+                        onChange={(e) =>
+                          setRevisionInstruction(
+                            e.target.value
+                          )
+                        }
+                        placeholder="例：コストより安全性を強調して。3枚に短くして。経営層向けの表現にして。"
+                      />
+
+                      <div className="revision-footer">
+                        <span className="muted">
+                          元の目的は維持したまま修正します
+                        </span>
+
+                        <button
+                          className="revision-button"
+                          onClick={reviseExecution}
+                          disabled={
+                            revising ||
+                            !revisionInstruction.trim()
+                          }
+                        >
+                          {revising
+                            ? "修正しています..."
+                            : "修正する →"}
+                        </button>
+                      </div>
+                    </div>
                   </section>
                 )}
               </>
@@ -812,7 +812,6 @@ function undoExecution() {
             </div>
           </>
         )}
-
       </div>
     </main>
   );
