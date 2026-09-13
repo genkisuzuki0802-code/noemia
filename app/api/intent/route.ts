@@ -1,5 +1,16 @@
 import { NextResponse } from "next/server";
 import { jsonrepair } from "jsonrepair";
+import { Redis } from "@upstash/redis";
+import { Ratelimit } from "@upstash/ratelimit";
+
+const redis = Redis.fromEnv();
+
+const ratelimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(20, "1 h"),
+  analytics: false,
+  prefix: "noemia:intent",
+});
 
 type Turn = {
   role: "user" | "assistant";
@@ -566,6 +577,20 @@ function extractText(data: any) {
 }
 
 export async function POST(request: Request) {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  const ip = forwardedFor?.split(",")[0]?.trim() || "unknown";
+
+  const { success } = await ratelimit.limit(ip);
+
+  if (!success) {
+    return NextResponse.json(
+      {
+        error:
+          "利用回数の上限に達しました。しばらく時間をおいてからお試しください。",
+      },
+      { status: 429 }
+    );
+  }
   try {
     const apiKey = process.env.GEMINI_API_KEY;
 
