@@ -176,6 +176,20 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     const prompt = body?.prompt;
+    const MAX_PROMPT_LENGTH = 20000;
+
+    if (
+      typeof prompt === "string" &&
+      prompt.length > MAX_PROMPT_LENGTH
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "実行する内容が長すぎます。文章を短くしてもう一度お試しください。",
+        },
+        { status: 413 }
+      );
+    }
 
     if (
       typeof prompt !== "string" ||

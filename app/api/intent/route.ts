@@ -622,6 +622,47 @@ export async function POST(request: Request) {
       );
     }
 
+    const MAX_TURNS = 20;
+    const MAX_TURN_LENGTH = 5000;
+    const MAX_TOTAL_LENGTH = 20000;
+
+    if (turns.length > MAX_TURNS) {
+      return NextResponse.json(
+        {
+          error:
+            "会話が長くなりすぎています。新しいセッションでお試しください。",
+        },
+        { status: 400 }
+      );
+    }
+
+    const hasOversizedTurn = turns.some(
+      (turn) =>
+        typeof turn?.content !== "string" ||
+        turn.content.length > MAX_TURN_LENGTH
+    );
+
+    const totalLength = turns.reduce(
+      (sum, turn) =>
+        sum +
+        (typeof turn?.content === "string"
+          ? turn.content.length
+          : 0),
+      0
+    );
+
+    if (
+      hasOversizedTurn ||
+      totalLength > MAX_TOTAL_LENGTH
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "入力内容が長すぎます。文章を短くしてもう一度お試しください。",
+        },
+        { status: 413 }
+      );
+    }
     const input = `
 以下はユーザーとNoemiaの会話履歴です。
 
