@@ -3,6 +3,8 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import LightConverge from "./components/LightConverge";
+import BrandTitle from "./components/BrandTitle";
 
 type Turn = {
   role: "user" | "assistant";
@@ -344,13 +346,25 @@ ${revisionInstruction}
   const assumptions =
     result?.assumptions ?? [];
 
+  const isReady =
+    result?.status === "ready" || Boolean(executionResult);
+
+  const intentProgress = isReady
+    ? 1
+    : (result?.understanding_score ?? 0) / 100;
+
   return (
     <main>
+      <LightConverge
+        progress={intentProgress}
+        ready={isReady}
+      />
+
       <div className="shell">
         <header className="brand">
-          <div className="brand-name">
-            Noemia
-          </div>
+          <BrandTitle />
+
+          <span className="sr-only">Noemia</span>
 
           <p className="brand-copy">
             うまく言葉にできなくていい。
@@ -358,7 +372,7 @@ ${revisionInstruction}
         </header>
 
         {!result && (
-          <section className="card hero">
+          <section className="hero">
             <h2>何をしたいですか？</h2>
 
             <p>
@@ -445,7 +459,7 @@ ${revisionInstruction}
                     marginTop: 12,
                     overflow: "hidden",
                     borderRadius: 999,
-                    background: "#eeeeef",
+                    background: "rgba(255, 255, 255, 0.08)",
                   }}
                 >
                   <div
@@ -453,8 +467,9 @@ ${revisionInstruction}
                       width: `${result.understanding_score}%`,
                       height: "100%",
                       borderRadius: 999,
-                      background: "#111",
-                      transition: "width 0.35s ease",
+                      background:
+                        "linear-gradient(90deg, #6ee7ff, #8f7bff)",
+                      transition: "width 0.6s ease",
                     }}
                   />
                 </div>
