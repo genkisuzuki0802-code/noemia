@@ -1,49 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import LightConverge from "./components/LightConverge";
 import BrandTitle from "./components/BrandTitle";
-
-type Turn = {
-  role: "user" | "assistant";
-  content: string;
-};
-
-type Intent = {
-  task: string;
-  goal: string;
-  audience: string;
-  desired_outcome: string;
-  context: string;
-  constraints: string;
-  evidence: string;
-  output: string;
-  quality: string;
-};
-
-type Assumption = {
-  text: string;
-  impact: "low" | "medium" | "high";
-  needs_confirmation: boolean;
-};
-
-type EngineResponse = {
-  status: "ask" | "ready";
-  understanding_score: number;
-  intent: Intent;
-
-  confirmed_facts?: string[];
-  assumptions?: Assumption[];
-  critical_gaps?: string[];
-  readiness_reason?: string;
-
-  next_question: string;
-  question_reason: string;
-  intent_summary: string;
-  final_prompt: string;
-};
+import HistorySidebar from "./components/HistorySidebar";
+import type { Turn, EngineResponse } from "./lib/types";
+import {
+  type HistorySession,
+  loadHistory,
+  upsertSession,
+  deleteSession,
+  makeSessionId,
+  deriveTitle,
+} from "./lib/history";
 
 export default function Home() {
   const [initialInput, setInitialInput] = useState("");
@@ -68,6 +39,83 @@ export default function Home() {
   const [showDetails, setShowDetails] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const [history, setHistory] = useState<HistorySession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<
+    string | null
+  >(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
+
+  function persistSession(params: {
+    turns: Turn[];
+    result: EngineResponse | null;
+    executionResult: string;
+    executionHistory: string[];
+  }) {
+    if (params.turns.length === 0) return;
+
+    const id = currentSessionId ?? makeSessionId();
+    const existing = history.find((s) => s.id === id);
+
+    const session: HistorySession = {
+      id,
+      createdAt: existing?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      title: deriveTitle(
+        params.turns,
+        params.result?.intent_summary
+      ),
+      turns: params.turns,
+      result: params.result,
+      executionResult: params.executionResult,
+      executionHistory: params.executionHistory,
+    };
+
+    if (!currentSessionId) {
+      setCurrentSessionId(id);
+    }
+
+    setHistory((prev) => upsertSession(prev, session));
+  }
+
+  function loadSession(id: string) {
+    const session = history.find((s) => s.id === id);
+    if (!session) return;
+
+    setCurrentSessionId(id);
+    setTurns(session.turns);
+    setResult(session.result);
+    setExecutionResult(session.executionResult);
+    setExecutionHistory(session.executionHistory);
+
+    setInitialInput("");
+    setAnswer("");
+    setError("");
+    setExecutionError("");
+    setRevisionInstruction("");
+    setRevising(false);
+    setShowDetails(false);
+    setShowPrompt(false);
+    setCopied(false);
+    setSidebarOpen(false);
+  }
+
+  function handleDeleteSession(id: string) {
+    setHistory((prev) => deleteSession(prev, id));
+
+    if (id === currentSessionId) {
+      reset();
+    }
+  }
+
+  function handleNewSession() {
+    reset();
+    setSidebarOpen(false);
+  }
 
   async function runEngine(newTurns: Turn[]) {
     setLoading(true);
@@ -128,7 +176,16 @@ export default function Home() {
 
     setTurns(newTurns);
 
-    await runEngine(newTurns);
+    const data = await runEngine(newTurns);
+
+    if (data) {
+      persistSession({
+        turns: newTurns,
+        result: data,
+        executionResult: "",
+        executionHistory: [],
+      });
+    }
   }
 
   async function submitAnswer() {
@@ -149,7 +206,16 @@ export default function Home() {
     setTurns(newTurns);
     setAnswer("");
 
-    await runEngine(newTurns);
+    const data = await runEngine(newTurns);
+
+    if (data) {
+      persistSession({
+        turns: newTurns,
+        result: data,
+        executionResult: "",
+        executionHistory: [],
+      });
+    }
   }
 
   async function executePrompt() {
@@ -179,15 +245,20 @@ export default function Home() {
         );
       }
 
-      if (executionResult.trim()) {
-        setExecutionHistory((prev) => [
-          ...prev,
-          executionResult,
-        ]);
-      }
+      const updatedHistory = executionResult.trim()
+        ? [...executionHistory, executionResult]
+        : executionHistory;
 
+      setExecutionHistory(updatedHistory);
       setExecutionResult(data.result || "");
       setExecutionModel(data.model || "");
+
+      persistSession({
+        turns,
+        result,
+        executionResult: data.result || "",
+        executionHistory: updatedHistory,
+      });
     } catch (e) {
       setExecutionError(
         e instanceof Error
@@ -251,16 +322,21 @@ ${revisionInstruction}
         );
       }
 
-      if (executionResult.trim()) {
-        setExecutionHistory((prev) => [
-          ...prev,
-          executionResult,
-        ]);
-      }
+      const updatedHistory = executionResult.trim()
+        ? [...executionHistory, executionResult]
+        : executionHistory;
 
+      setExecutionHistory(updatedHistory);
       setExecutionResult(data.result || "");
       setExecutionModel(data.model || "");
       setRevisionInstruction("");
+
+      persistSession({
+        turns,
+        result,
+        executionResult: data.result || "",
+        executionHistory: updatedHistory,
+      });
     } catch (e) {
       setExecutionError(
         e instanceof Error
@@ -280,13 +356,18 @@ ${revisionInstruction}
     const previousResult =
       executionHistory[executionHistory.length - 1];
 
+    const updatedHistory = executionHistory.slice(0, -1);
+
     setExecutionResult(previousResult);
-
-    setExecutionHistory((prev) =>
-      prev.slice(0, -1)
-    );
-
+    setExecutionHistory(updatedHistory);
     setRevisionInstruction("");
+
+    persistSession({
+      turns,
+      result,
+      executionResult: previousResult,
+      executionHistory: updatedHistory,
+    });
   }
 
   function reset() {
@@ -308,6 +389,8 @@ ${revisionInstruction}
     setShowDetails(false);
     setShowPrompt(false);
     setCopied(false);
+
+    setCurrentSessionId(null);
   }
 
   async function copyPrompt() {
@@ -354,12 +437,31 @@ ${revisionInstruction}
     : (result?.understanding_score ?? 0) / 100;
 
   return (
-    <main>
+    <>
       <LightConverge
         progress={intentProgress}
         ready={isReady}
       />
 
+      <button
+        className="sidebar-toggle"
+        onClick={() => setSidebarOpen(true)}
+        aria-label="履歴を開く"
+      >
+        ☰
+      </button>
+
+      <HistorySidebar
+        sessions={history}
+        currentId={currentSessionId}
+        open={sidebarOpen}
+        onSelect={loadSession}
+        onDelete={handleDeleteSession}
+        onNew={handleNewSession}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      <main>
       <div className="shell">
         <header className="brand">
           <BrandTitle />
@@ -828,6 +930,7 @@ ${revisionInstruction}
           </>
         )}
       </div>
-    </main>
+      </main>
+    </>
   );
 }
