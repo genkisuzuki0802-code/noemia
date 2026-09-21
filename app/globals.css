@@ -44,6 +44,7 @@ main {
   display: flex;
   justify-content: center;
   padding: 56px 20px 56px 300px;
+  overflow-x: clip;
 }
 
 .shell {
@@ -119,6 +120,192 @@ main {
   100% {
     r: 340;
     opacity: 0;
+  }
+}
+
+/* Warp tunnel (question transitions) */
+
+.warp-canvas {
+  position: fixed;
+  top: 0;
+  left: 264px;
+  width: calc(100vw - 264px);
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.depth-in {
+  perspective: 900px;
+  perspective-origin: 50% 35%;
+}
+
+.depth-in > * {
+  animation: depth-in 2s cubic-bezier(0.3, 0.05, 0.25, 1) backwards;
+}
+
+.depth-in > *:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.depth-in > *:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+.depth-in > *:nth-child(4) {
+  animation-delay: 0.36s;
+}
+
+.depth-in > *:nth-child(n + 5) {
+  animation-delay: 0.48s;
+}
+
+.depth-in.depth-out > *:nth-child(n) {
+  animation: depth-out 0.9s cubic-bezier(0.55, 0, 0.9, 0.5) forwards;
+}
+
+.hero.hero-out {
+  animation: hero-out 0.9s cubic-bezier(0.55, 0, 0.9, 0.5) forwards;
+}
+
+@keyframes depth-in {
+  0% {
+    opacity: 0;
+    transform: translateZ(-2400px);
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateZ(0);
+  }
+}
+
+@keyframes depth-out {
+  0% {
+    opacity: 1;
+    transform: translateZ(0);
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translateZ(650px);
+  }
+}
+
+@keyframes hero-out {
+  0% {
+    opacity: 1;
+    transform: perspective(900px) translateZ(0);
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: perspective(900px) translateZ(650px);
+  }
+}
+
+.depth-in.light-in > *:nth-child(n) {
+  animation: none;
+}
+
+.depth-in > .result-card:nth-child(n) {
+  animation: none;
+}
+
+.result-card {
+  scroll-margin-top: 24px;
+}
+
+.particle-reveal {
+  position: relative;
+}
+
+.particle-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+/* Exit light: white light pours in from the depth before the ready screen */
+
+.exit-light {
+  position: fixed;
+  z-index: 30;
+  top: 46%;
+  left: calc(264px + (100vw - 264px) / 2);
+  width: 240vmax;
+  height: 240vmax;
+  margin: -120vmax 0 0 -120vmax;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    circle closest-side,
+    #ffffff 0%,
+    #ffffff 60%,
+    rgba(240, 248, 255, 0.85) 72%,
+    rgba(214, 234, 255, 0.45) 85%,
+    rgba(200, 225, 255, 0) 100%
+  );
+  transform: scale(0.004);
+  opacity: 0;
+}
+
+.exit-light-grow {
+  animation: exit-light-grow 2.6s cubic-bezier(0.42, 0, 0.72, 1) forwards;
+}
+
+.exit-light-fade {
+  animation: exit-light-fade 1.7s cubic-bezier(0.3, 0.1, 0.4, 1) forwards;
+}
+
+@keyframes exit-light-grow {
+  0% {
+    transform: scale(0.004);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes exit-light-fade {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 960px) {
+  .exit-light {
+    left: 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exit-light {
+    display: none;
+  }
+
+  .depth-in > *,
+  .depth-in.light-in > *:nth-child(n),
+  .depth-in.depth-out > *:nth-child(n),
+  .hero.hero-out {
+    animation: none;
   }
 }
 
@@ -890,6 +1077,11 @@ textarea:focus {
 
   .converge {
     left: 0;
+  }
+
+  .warp-canvas {
+    left: 0;
+    width: 100vw;
   }
 
   .sidebar-toggle {

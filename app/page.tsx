@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import LightConverge from "./components/LightConverge";
+import WarpTunnel from "./components/WarpTunnel";
 import BrandTitle from "./components/BrandTitle";
 import HistorySidebar from "./components/HistorySidebar";
+import ParticleReveal from "./components/ParticleReveal";
 import type { Turn, EngineResponse } from "./lib/types";
 import {
   type HistorySession,
@@ -15,6 +17,12 @@ import {
   makeSessionId,
   deriveTitle,
 } from "./lib/history";
+
+const WARP_MIN_MS = 1500;
+const LIGHT_GROW_MS = 2600;
+const LIGHT_FADE_MS = 1700;
+
+type LightPhase = "off" | "grow" | "fade";
 
 export default function Home() {
   const [initialInput, setInitialInput] = useState("");
@@ -45,6 +53,23 @@ export default function Home() {
     string | null
   >(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [depthKey, setDepthKey] = useState(0);
+  const [lightPhase, setLightPhase] = useState<LightPhase>("off");
+  const [lightReveal, setLightReveal] = useState(false);
+  const [resultRun, setResultRun] = useState(0);
+  const [animateResult, setAnimateResult] = useState(false);
+
+  useEffect(() => {
+    if (!animateResult) return;
+
+    const id = requestAnimationFrame(() => {
+      document
+        .querySelector(".result-card")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    return () => cancelAnimationFrame(id);
+  }, [resultRun, animateResult]);
 
   useEffect(() => {
     setHistory(loadHistory());
@@ -89,6 +114,9 @@ export default function Home() {
     setCurrentSessionId(id);
     setTurns(session.turns);
     setResult(session.result);
+    setAnimateResult(false);
+    setLightReveal(false);
+    setDepthKey((k) => k + 1);
     setExecutionResult(session.executionResult);
     setExecutionHistory(session.executionHistory);
 
@@ -121,6 +149,8 @@ export default function Home() {
     setLoading(true);
     setError("");
 
+    const startedAt = Date.now();
+
     try {
       const response = await fetch("/api/intent", {
         method: "POST",
@@ -140,7 +170,40 @@ export default function Home() {
         );
       }
 
+      const reducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+
+      const remaining = WARP_MIN_MS - (Date.now() - startedAt);
+
+      if (!reducedMotion && remaining > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, remaining)
+        );
+      }
+
+      const withLight =
+        data.status === "ready" && !reducedMotion;
+
+      if (withLight) {
+        setLightPhase("grow");
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, LIGHT_GROW_MS)
+        );
+      }
+
+      setLightReveal(withLight);
       setResult(data);
+      setDepthKey((k) => k + 1);
+
+      if (withLight) {
+        setLightPhase("fade");
+
+        setTimeout(() => {
+          setLightPhase("off");
+        }, LIGHT_FADE_MS);
+      }
 
       setShowDetails(false);
       setShowPrompt(false);
@@ -152,6 +215,7 @@ export default function Home() {
 
       return data as EngineResponse;
     } catch (e) {
+      setLightPhase("off");
       setError(
         e instanceof Error
           ? e.message
@@ -252,6 +316,8 @@ export default function Home() {
       setExecutionHistory(updatedHistory);
       setExecutionResult(data.result || "");
       setExecutionModel(data.model || "");
+      setAnimateResult(true);
+      setResultRun((k) => k + 1);
 
       persistSession({
         turns,
@@ -330,6 +396,8 @@ ${revisionInstruction}
       setExecutionResult(data.result || "");
       setExecutionModel(data.model || "");
       setRevisionInstruction("");
+      setAnimateResult(true);
+      setResultRun((k) => k + 1);
 
       persistSession({
         turns,
@@ -370,6 +438,27 @@ ${revisionInstruction}
     });
   }
 
+  function submitOnEnter(
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+    action: () => void,
+    disabled: boolean
+  ) {
+    if (
+      e.key !== "Enter" ||
+      e.shiftKey ||
+      e.nativeEvent.isComposing ||
+      e.keyCode === 229
+    ) {
+      return;
+    }
+
+    e.preventDefault();
+
+    if (!disabled) {
+      action();
+    }
+  }
+
   function reset() {
     setInitialInput("");
     setAnswer("");
@@ -391,6 +480,7 @@ ${revisionInstruction}
     setCopied(false);
 
     setCurrentSessionId(null);
+    setAnimateResult(false);
   }
 
   async function copyPrompt() {
@@ -443,6 +533,15 @@ ${revisionInstruction}
         ready={isReady}
       />
 
+      <WarpTunnel boost={loading} />
+
+      {lightPhase !== "off" && (
+        <div
+          className={`exit-light exit-light-${lightPhase}`}
+          aria-hidden="true"
+        />
+      )}
+
       <button
         className="sidebar-toggle"
         onClick={() => setSidebarOpen(true)}
@@ -474,7 +573,7 @@ ${revisionInstruction}
         </header>
 
         {!result && (
-          <section className="hero">
+          <section className={`hero${loading ? " hero-out" : ""}`}>
             <h2>何をしたいですか？</h2>
 
             <p>
@@ -490,11 +589,19 @@ ${revisionInstruction}
                 onChange={(e) =>
                   setInitialInput(e.target.value)
                 }
+                onKeyDown={(e) =>
+                  submitOnEnter(
+                    e,
+                    start,
+                    loading || !initialInput.trim()
+                  )
+                }
                 placeholder="例：来週お客さんにプレゼンするんだけど、最近の市場について説得力ある感じで説明したい。"
               />
 
               <div className="input-hint">
                 短くても、まとまっていなくても大丈夫です
+                （Enterで送信 / Shift+Enterで改行）
               </div>
 
               <div className="intent-input-footer">
@@ -524,7 +631,10 @@ ${revisionInstruction}
         )}
 
         {result && (
-          <>
+          <div
+            className={`depth-in${lightReveal ? " light-in" : ""}${loading ? " depth-out" : ""}`}
+            key={depthKey}
+          >
             {result.status === "ask" && (
               <section
                 className="card"
@@ -541,7 +651,7 @@ ${revisionInstruction}
                   }}
                 >
                   <span className="muted">
-                    Intent理解度
+                    Noemia理解度
                   </span>
 
                   <strong
@@ -605,12 +715,20 @@ ${revisionInstruction}
                   onChange={(e) =>
                     setAnswer(e.target.value)
                   }
+                  onKeyDown={(e) =>
+                    submitOnEnter(
+                      e,
+                      submitAnswer,
+                      loading || !answer.trim()
+                    )
+                  }
                   placeholder="短くても大丈夫です。"
                 />
 
                 <div className="answer-footer">
                   <span className="input-hint">
                     分かる範囲だけで大丈夫です
+                    （Enterで送信 / Shift+Enterで改行）
                   </span>
 
                   <button
@@ -633,7 +751,7 @@ ${revisionInstruction}
               <>
                 <section className="card intent-summary-card">
                   <div className="muted">
-                    AIが理解したあなたの意図
+                    Noemiaが理解したあなたの意図
                   </div>
 
                   <div className="intent-summary">
@@ -866,13 +984,17 @@ ${revisionInstruction}
                     </div>
 
                     <div className="result-body">
-                      <div className="markdown">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                        >
-                          {executionResult}
-                        </ReactMarkdown>
-                      </div>
+                      <ParticleReveal
+                        runKey={animateResult ? resultRun : 0}
+                      >
+                        <div className="markdown">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                          >
+                            {executionResult}
+                          </ReactMarkdown>
+                        </div>
+                      </ParticleReveal>
                     </div>
 
                     <div className="revision-panel">
@@ -893,6 +1015,14 @@ ${revisionInstruction}
                         onChange={(e) =>
                           setRevisionInstruction(
                             e.target.value
+                          )
+                        }
+                        onKeyDown={(e) =>
+                          submitOnEnter(
+                            e,
+                            reviseExecution,
+                            revising ||
+                              !revisionInstruction.trim()
                           )
                         }
                         placeholder="例：コストより安全性を強調して。3枚に短くして。経営層向けの表現にして。"
@@ -927,7 +1057,7 @@ ${revisionInstruction}
                 最初から
               </button>
             </div>
-          </>
+          </div>
         )}
       </div>
       </main>
