@@ -141,40 +141,16 @@ main {
 }
 
 .brand-title {
-  display: inline-block;
-  line-height: 1;
+  height: 56px;
 }
 
-.brand-title-svg {
+.brand-title-canvas {
   display: block;
-}
-
-.brand-title-text {
-  stroke-dasharray: 1400;
-  animation: brand-cycle 9s cubic-bezier(0.45, 0, 0.2, 1) infinite;
-}
-
-@keyframes brand-cycle {
-  0% {
-    stroke-dashoffset: 1400;
-    clip-path: inset(0 0% 0 0);
-  }
-  34% {
-    stroke-dashoffset: 0;
-    clip-path: inset(0 0% 0 0);
-  }
-  58% {
-    stroke-dashoffset: 0;
-    clip-path: inset(0 0% 0 0);
-  }
-  86% {
-    stroke-dashoffset: 0;
-    clip-path: inset(0 100% 0 0);
-  }
-  100% {
-    stroke-dashoffset: 0;
-    clip-path: inset(0 100% 0 0);
-  }
+  width: calc(100% + 28px);
+  height: 56px;
+  margin-left: -28px;
+  filter: drop-shadow(0 0 6px rgba(143, 139, 255, 0.55));
+  pointer-events: none;
 }
 
 .brand-copy {
