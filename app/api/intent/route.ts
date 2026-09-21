@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { jsonrepair } from "jsonrepair";
 import { Redis } from "@upstash/redis";
 import { Ratelimit } from "@upstash/ratelimit";
+import { GEMINI_MODELS, generateWithFallback } from "../../lib/gemini";
 
 const redis = Redis.fromEnv();
 
@@ -17,12 +18,7 @@ type Turn = {
   content: string;
 };
 
-const MODELS = [
-  "gemini-3.5-flash-lite",
-  "gemini-3.8-flash",
-  "gemini-3.7-flash",
-  "gemini-3.6-flash",
-];
+export const maxDuration = 60;
 
 const responseSchema = {
   type: "object",
@@ -469,86 +465,6 @@ function transcript(turns: Turn[]) {
     .join("\n");
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function callModel(
-  apiKey: string,
-  model: string,
-  input: string
-) {
-  const controller = new AbortController();
-
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, 20000);
-
-  try {
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/interactions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model,
-          system_instruction: SYSTEM_PROMPT,
-          input,
-          store: false,
-
-          response_format: {
-            type: "text",
-            mime_type: "application/json",
-            schema: responseSchema,
-          },
-
-          generation_config: {
-            temperature: 0.1,
-            max_output_tokens: 3000,
-          },
-        }),
-      }
-    );
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      console.error(`${model} error:`, errorText);
-
-      const retryable =
-        response.status === 429 ||
-        response.status === 500 ||
-        response.status === 502 ||
-        response.status === 503 ||
-        response.status === 504 ||
-        errorText.toLowerCase().includes("high demand") ||
-        errorText.toLowerCase().includes("temporarily");
-
-      if (retryable) {
-        throw new Error("RETRYABLE");
-      }
-
-      throw new Error("NON_RETRYABLE");
-    }
-
-    return await response.json();
-  } catch (error: any) {
-    clearTimeout(timeout);
-
-    if (error?.name === "AbortError") {
-      throw new Error("RETRYABLE");
-    }
-
-    throw error;
-  }
-}
-
 function extractText(data: any) {
   if (typeof data?.output_text === "string") {
     return data.output_text;
@@ -700,33 +616,34 @@ assumptions を使用する場合は
 必ず「未確認の仮説」と明記してください。
 `;
 
-    let data: any = null;
-    let usedModel = "";
+    const generated = await generateWithFallback({
+      apiKey,
+      models: GEMINI_MODELS,
+      label: "Intent",
+      timeoutMs: 45000,
+      totalMs: 55000,
+      hedgeMs: 10000,
+      buildBody: (model) => ({
+        model,
+        system_instruction: SYSTEM_PROMPT,
+        input,
+        store: false,
 
-    for (const model of MODELS) {
-      console.log(
-        `Trying model: ${model}`
-      );
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: responseSchema,
+        },
 
-      try {
-        data = await callModel(
-          apiKey,
-          model,
-          input
-        );
+        generation_config: {
+          temperature: 0.1,
+          max_output_tokens: 3000,
+        },
+      }),
+    });
 
-        usedModel = model;
-
-        break;
-      } catch (error: any) {
-        console.error(
-          `Model ${model} failed:`,
-          error?.message
-        );
-
-        await sleep(1000);
-      }
-    }
+    const data = generated?.data;
+    const usedModel = generated?.model ?? "";
 
     if (!data) {
       return NextResponse.json(

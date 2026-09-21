@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { Ratelimit } from "@upstash/ratelimit";
+import { GEMINI_MODELS, generateWithFallback } from "../../lib/gemini";
 
 const redis = Redis.fromEnv();
 
@@ -11,29 +12,10 @@ const ratelimit = new Ratelimit({
   prefix: "noemia:execute",
 });
 
-const MODELS = [
-  "gemini-3.5-flash-lite",
-  "gemini-3.8-flash",
-  "gemini-3.7-flash",
-  "gemini-3.6-flash",
-];
+export const maxDuration = 60;
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function callModel(
-  apiKey: string,
-  model: string,
-  prompt: string
-) {
-  const controller = new AbortController();
-
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, 25000);
-
-const groundedPrompt = `
+function buildGroundedPrompt(prompt: string) {
+  return `
 ${prompt}
 
 ---
@@ -73,62 +55,6 @@ Any supporting mechanism or proof that has not been explicitly provided must be 
 
 Produce the final deliverable directly. Do not explain these rules.
 `;
-
-  try {
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/interactions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model,
-          input: groundedPrompt,
-          store: false,
-          generation_config: {
-            temperature: 0.4,
-            max_output_tokens: 5000,
-          },
-        }),
-      }
-    );
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      console.error(`${model} execute error:`, errorText);
-
-      const retryable =
-        response.status === 429 ||
-        response.status === 500 ||
-        response.status === 502 ||
-        response.status === 503 ||
-        response.status === 504 ||
-        errorText.toLowerCase().includes("high demand") ||
-        errorText.toLowerCase().includes("temporarily");
-
-      if (retryable) {
-        throw new Error("RETRYABLE");
-      }
-
-      throw new Error("NON_RETRYABLE");
-    }
-
-    return await response.json();
-  } catch (error: any) {
-    clearTimeout(timeout);
-
-    if (error?.name === "AbortError") {
-      throw new Error("RETRYABLE");
-    }
-
-    throw error;
-  }
 }
 
 function extractText(data: any) {
@@ -203,30 +129,28 @@ export async function POST(request: Request) {
       );
     }
 
-    let data: any = null;
-    let usedModel = "";
+    const groundedPrompt = buildGroundedPrompt(prompt);
 
-    for (const model of MODELS) {
-      console.log(`Execute: trying model ${model}`);
+    const generated = await generateWithFallback({
+      apiKey,
+      models: GEMINI_MODELS.slice(0, 3),
+      label: "Execute",
+      timeoutMs: 45000,
+      totalMs: 55000,
+      hedgeMs: 15000,
+      buildBody: (model) => ({
+        model,
+        input: groundedPrompt,
+        store: false,
+        generation_config: {
+          temperature: 0.4,
+          max_output_tokens: 5000,
+        },
+      }),
+    });
 
-      try {
-        data = await callModel(
-          apiKey,
-          model,
-          prompt
-        );
-
-        usedModel = model;
-        break;
-      } catch (error: any) {
-        console.error(
-          `Execute model ${model} failed:`,
-          error?.message
-        );
-
-        await sleep(1000);
-      }
-    }
+    const data = generated?.data;
+    const usedModel = generated?.model ?? "";
 
     if (!data) {
       return NextResponse.json(

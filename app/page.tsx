@@ -22,7 +22,53 @@ const WARP_MIN_MS = 1500;
 const LIGHT_GROW_MS = 2600;
 const LIGHT_FADE_MS = 1700;
 
+const SLOW_NOTICE_MS = 9000;
+const REQUEST_TIMEOUT_MS = 65000;
+
 type LightPhase = "off" | "grow" | "fade";
+
+async function postJson(
+  url: string,
+  body: unknown,
+  timeoutMs: number
+): Promise<{
+  ok: boolean;
+  data: any;
+}> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    let data: any = null;
+
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+
+    return { ok: response.ok, data };
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error(
+        "応答に時間がかかりすぎています。もう一度お試しください。"
+      );
+    }
+
+    throw new Error(
+      "通信に失敗しました。ネットワークを確認して、もう一度お試しください。"
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export default function Home() {
   const [initialInput, setInitialInput] = useState("");
@@ -56,6 +102,7 @@ export default function Home() {
   const [depthKey, setDepthKey] = useState(0);
   const [lightPhase, setLightPhase] = useState<LightPhase>("off");
   const [lightReveal, setLightReveal] = useState(false);
+  const [slow, setSlow] = useState(false);
   const [resultRun, setResultRun] = useState(0);
   const [animateResult, setAnimateResult] = useState(false);
 
@@ -147,24 +194,20 @@ export default function Home() {
 
   async function runEngine(newTurns: Turn[]) {
     setLoading(true);
+    setSlow(false);
     setError("");
 
     const startedAt = Date.now();
+    const slowTimer = setTimeout(() => setSlow(true), SLOW_NOTICE_MS);
 
     try {
-      const response = await fetch("/api/intent", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          turns: newTurns,
-        }),
-      });
+      const { ok, data } = await postJson(
+        "/api/intent",
+        { turns: newTurns },
+        REQUEST_TIMEOUT_MS
+      );
 
-      const data = await response.json();
-
-      if (!response.ok) {
+      if (!ok || !data) {
         throw new Error(
           data?.error || "処理に失敗しました"
         );
@@ -224,6 +267,8 @@ export default function Home() {
 
       return null;
     } finally {
+      clearTimeout(slowTimer);
+      setSlow(false);
       setLoading(false);
     }
   }
@@ -249,11 +294,16 @@ export default function Home() {
         executionResult: "",
         executionHistory: [],
       });
+    } else {
+      setTurns([]);
     }
   }
 
   async function submitAnswer() {
     if (!answer.trim() || !result) return;
+
+    const submittedAnswer = answer;
+    const previousTurns = turns;
 
     const newTurns: Turn[] = [
       ...turns,
@@ -279,6 +329,9 @@ export default function Home() {
         executionResult: "",
         executionHistory: [],
       });
+    } else {
+      setTurns(previousTurns);
+      setAnswer(submittedAnswer);
     }
   }
 
@@ -291,19 +344,13 @@ export default function Home() {
     setExecutionModel("");
 
     try {
-      const response = await fetch("/api/execute", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt: result.final_prompt,
-        }),
-      });
+      const { ok, data } = await postJson(
+        "/api/execute",
+        { prompt: result.final_prompt },
+        REQUEST_TIMEOUT_MS
+      );
 
-      const data = await response.json();
-
-      if (!response.ok) {
+      if (!ok || !data) {
         throw new Error(
           data?.error || "AI実行に失敗しました"
         );
@@ -370,19 +417,13 @@ ${revisionInstruction}
 - 完成版のみを出力してください。
 `;
 
-      const response = await fetch("/api/execute", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt: revisionPrompt,
-        }),
-      });
+      const { ok, data } = await postJson(
+        "/api/execute",
+        { prompt: revisionPrompt },
+        REQUEST_TIMEOUT_MS
+      );
 
-      const data = await response.json();
-
-      if (!response.ok) {
+      if (!ok || !data) {
         throw new Error(
           data?.error || "修正に失敗しました"
         );
@@ -534,6 +575,13 @@ ${revisionInstruction}
       />
 
       <WarpTunnel boost={loading} />
+
+      {loading && slow && (
+        <div className="loading-note" role="status">
+          AIが混み合っていて、少し時間がかかっています。
+          このままお待ちください…
+        </div>
+      )}
 
       {lightPhase !== "off" && (
         <div
